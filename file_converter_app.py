@@ -1,126 +1,73 @@
 import streamlit as st
 import pandas as pd
 import io
-import os
-import requests
-import tempfile
-from pdf2docx import Converter
 
-st.set_page_config(page_title="📁 Universal File Converter", layout="centered")
-st.title("📁 Universal File Converter")
+st.set_page_config(page_title="📁 File Converter", layout="centered")
 
-# --- Step 1: Select Conversion Type ---
-st.subheader("1️⃣ Select Conversion Type")
+st.title("🔄 Excel ⇄ CSV File Converter")
 
-conversion_options = [
-    "Excel ➔ CSV",
-    "CSV ➔ Excel",
-    "Word (.docx) ➔ PDF",
-    "PDF ➔ Word (.docx)"
-]
+# --- Stylish Toggle Buttons Using Columns ---
+st.subheader("Step 1: Choose Conversion Direction")
 
-conversion_type = st.selectbox("Choose a conversion:", conversion_options)
+if "conversion_type" not in st.session_state:
+    st.session_state.conversion_type = "Excel ➜ CSV"
 
-# --- Step 2: Upload File Based on Selected Conversion ---
-st.subheader("2️⃣ Upload Your File")
+col1, col2 = st.columns(2)
 
-upload_types = {
-    "Excel ➔ CSV": ["xlsx", "xls"],
-    "CSV ➔ Excel": ["csv"],
-    "Word (.docx) ➔ PDF": ["docx"],
-    "PDF ➔ Word (.docx)": ["pdf"]
-}
+with col1:
+    if st.button("📤 Excel ➜ CSV"):
+        st.session_state.conversion_type = "Excel ➜ CSV"
 
-uploaded_file = st.file_uploader("Upload file", type=upload_types[conversion_type])
+with col2:
+    if st.button("📥 CSV ➜ Excel"):
+        st.session_state.conversion_type = "CSV ➜ Excel"
 
-# --- ConvertAPI DOCX to PDF Helper ---
-def convert_docx_to_pdf_via_api(file, api_secret):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
-        temp_file.write(file.read())
-        temp_file_path = temp_file.name
+st.markdown(f"**🟢 Selected:** `{st.session_state.conversion_type}`")
 
-    convert_url = f"https://v2.convertapi.com/convert/docx/to/pdf?Secret={api_secret}"
+# --- File Upload Based on Selection ---
+st.subheader("Step 2: Upload Your File")
 
-    with open(temp_file_path, "rb") as docx_file:
-        response = requests.post(convert_url, files={"File": docx_file})
+file_types = ["xlsx", "xls"] if st.session_state.conversion_type == "Excel ➜ CSV" else ["csv"]
+uploaded_file = st.file_uploader("Upload file here", type=file_types)
 
-    os.remove(temp_file_path)
-
-    if response.status_code == 200:
-        file_url = response.json()["Files"][0]["Url"]
-        download_response = requests.get(file_url)
-        if download_response.status_code == 200:
-            return download_response.content
-        else:
-            raise Exception("Failed to download converted PDF.")
-    else:
-        raise Exception("API conversion failed.")
-
-# --- Step 3: Handle Conversion ---
+# --- File Conversion Logic ---
 if uploaded_file:
     file_name = uploaded_file.name
-    st.info(f"📄 Uploaded: `{file_name}`")
+    st.info(f"📄 Uploaded File: `{file_name}`")
 
-    try:
-        if conversion_type == "Excel ➔ CSV":
+    if st.session_state.conversion_type == "Excel ➜ CSV":
+        try:
             df = pd.read_excel(uploaded_file)
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
-            st.success("✅ Converted Excel to CSV")
+
+            st.success("✅ Successfully converted Excel to CSV!")
             st.download_button(
-                label="📅 Download CSV",
+                label="📥 Download CSV",
                 data=csv_buffer.getvalue(),
                 file_name=file_name.rsplit(".", 1)[0] + ".csv",
                 mime="text/csv"
             )
             st.dataframe(df.head(10))
 
-        elif conversion_type == "CSV ➔ Excel":
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+
+    elif st.session_state.conversion_type == "CSV ➜ Excel":
+        try:
             df = pd.read_csv(uploaded_file)
             excel_buffer = io.BytesIO()
             df.to_excel(excel_buffer, index=False, engine='openpyxl')
-            st.success("✅ Converted CSV to Excel")
+
+            st.success("✅ Successfully converted CSV to Excel!")
             st.download_button(
-                label="📅 Download Excel",
+                label="📥 Download Excel (.xlsx)",
                 data=excel_buffer.getvalue(),
                 file_name=file_name.rsplit(".", 1)[0] + ".xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
             st.dataframe(df.head(10))
 
-        elif conversion_type == "Word (.docx) ➔ PDF":
-            api_key = st.secrets["convertapi"]["secret"]
-            result = convert_docx_to_pdf_via_api(uploaded_file, api_key)
-            st.success("✅ Converted DOCX to PDF via API")
-            st.download_button(
-                label="📅 Download PDF",
-                data=result,
-                file_name=file_name.rsplit(".", 1)[0] + ".pdf",
-                mime="application/pdf"
-            )
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
 
-        elif conversion_type == "PDF ➔ Word (.docx)":
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-                temp_pdf.write(uploaded_file.read())
-                temp_pdf_path = temp_pdf.name
-
-            output_docx_path = temp_pdf_path.replace(".pdf", ".docx")
-
-            cv = Converter(temp_pdf_path)
-            cv.convert(output_docx_path, start=0, end=None)
-            cv.close()
-
-            with open(output_docx_path, "rb") as out_docx:
-                st.success("✅ Converted PDF to DOCX")
-                st.download_button(
-                    label="📅 Download Word",
-                    data=out_docx.read(),
-                    file_name=file_name.rsplit(".", 1)[0] + ".docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
-
-            os.remove(temp_pdf_path)
-            os.remove(output_docx_path)
-
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
