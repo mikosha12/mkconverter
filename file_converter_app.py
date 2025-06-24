@@ -1,47 +1,51 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
+from docx2pdf import convert as docx_to_pdf
+from pdf2docx import Converter as PDFtoWordConverter
+from tempfile import NamedTemporaryFile
 
-st.set_page_config(page_title="📁 File Converter", layout="centered")
+st.set_page_config(page_title="📁 Universal File Converter", layout="centered")
+st.title("📁 Universal File Converter")
 
-st.title("🔄 Excel ⇄ CSV File Converter")
+# --- Step 1: Select Conversion Type ---
+st.subheader("1️⃣ Select Conversion Type")
 
-# --- Stylish Toggle Buttons Using Columns ---
-st.subheader("Step 1: Choose Conversion Direction")
+conversion_options = [
+    "Excel ➜ CSV",
+    "CSV ➜ Excel",
+    "Word (.docx) ➜ PDF",
+    "PDF ➜ Word (.docx)"
+]
 
-if "conversion_type" not in st.session_state:
-    st.session_state.conversion_type = "Excel ➜ CSV"
+conversion_type = st.selectbox("Choose a conversion:", conversion_options)
 
-col1, col2 = st.columns(2)
+# --- Step 2: Upload File Based on Selected Conversion ---
+st.subheader("2️⃣ Upload Your File")
 
-with col1:
-    if st.button("📤 Excel ➜ CSV"):
-        st.session_state.conversion_type = "Excel ➜ CSV"
+upload_types = {
+    "Excel ➜ CSV": ["xlsx", "xls"],
+    "CSV ➜ Excel": ["csv"],
+    "Word (.docx) ➜ PDF": ["docx"],
+    "PDF ➜ Word (.docx)": ["pdf"]
+}
 
-with col2:
-    if st.button("📥 CSV ➜ Excel"):
-        st.session_state.conversion_type = "CSV ➜ Excel"
+uploaded_file = st.file_uploader("Upload file", type=upload_types[conversion_type])
 
-st.markdown(f"**🟢 Selected:** `{st.session_state.conversion_type}`")
-
-# --- File Upload Based on Selection ---
-st.subheader("Step 2: Upload Your File")
-
-file_types = ["xlsx", "xls"] if st.session_state.conversion_type == "Excel ➜ CSV" else ["csv"]
-uploaded_file = st.file_uploader("Upload file here", type=file_types)
-
-# --- File Conversion Logic ---
+# --- Step 3: Handle Conversion ---
 if uploaded_file:
     file_name = uploaded_file.name
-    st.info(f"📄 Uploaded File: `{file_name}`")
+    st.info(f"📄 Uploaded: `{file_name}`")
 
-    if st.session_state.conversion_type == "Excel ➜ CSV":
+    # Excel ➜ CSV
+    if conversion_type == "Excel ➜ CSV":
         try:
             df = pd.read_excel(uploaded_file)
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
 
-            st.success("✅ Successfully converted Excel to CSV!")
+            st.success("✅ Converted Excel to CSV")
             st.download_button(
                 label="📥 Download CSV",
                 data=csv_buffer.getvalue(),
@@ -53,15 +57,16 @@ if uploaded_file:
         except Exception as e:
             st.error(f"❌ Error: {e}")
 
-    elif st.session_state.conversion_type == "CSV ➜ Excel":
+    # CSV ➜ Excel
+    elif conversion_type == "CSV ➜ Excel":
         try:
             df = pd.read_csv(uploaded_file)
             excel_buffer = io.BytesIO()
             df.to_excel(excel_buffer, index=False, engine='openpyxl')
 
-            st.success("✅ Successfully converted CSV to Excel!")
+            st.success("✅ Converted CSV to Excel")
             st.download_button(
-                label="📥 Download Excel (.xlsx)",
+                label="📥 Download Excel",
                 data=excel_buffer.getvalue(),
                 file_name=file_name.rsplit(".", 1)[0] + ".xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -71,3 +76,55 @@ if uploaded_file:
         except Exception as e:
             st.error(f"❌ Error: {e}")
 
+    # Word ➜ PDF
+    elif conversion_type == "Word (.docx) ➜ PDF":
+        try:
+            with NamedTemporaryFile(delete=False, suffix=".docx") as temp_docx:
+                temp_docx.write(uploaded_file.read())
+                temp_docx_path = temp_docx.name
+
+            output_pdf_path = temp_docx_path.replace(".docx", ".pdf")
+            docx_to_pdf(temp_docx_path, output_pdf_path)
+
+            with open(output_pdf_path, "rb") as out_pdf:
+                st.success("✅ Converted Word to PDF")
+                st.download_button(
+                    label="📥 Download PDF",
+                    data=out_pdf.read(),
+                    file_name=file_name.rsplit(".", 1)[0] + ".pdf",
+                    mime="application/pdf"
+                )
+
+            os.remove(temp_docx_path)
+            os.remove(output_pdf_path)
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
+
+    # PDF ➜ Word
+    elif conversion_type == "PDF ➜ Word (.docx)":
+        try:
+            with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+                temp_pdf.write(uploaded_file.read())
+                temp_pdf_path = temp_pdf.name
+
+            output_docx_path = temp_pdf_path.replace(".pdf", ".docx")
+
+            cv = PDFtoWordConverter(temp_pdf_path)
+            cv.convert(output_docx_path, start=0, end=None)
+            cv.close()
+
+            with open(output_docx_path, "rb") as out_docx:
+                st.success("✅ Converted PDF to Word")
+                st.download_button(
+                    label="📥 Download Word (.docx)",
+                    data=out_docx.read(),
+                    file_name=file_name.rsplit(".", 1)[0] + ".docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+
+            os.remove(temp_pdf_path)
+            os.remove(output_docx_path)
+
+        except Exception as e:
+            st.error(f"❌ Error: {e}")
